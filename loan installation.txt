@@ -1,0 +1,19 @@
+
+Loans Installation and Configuration
+
+Copy files to www
+Confirm PHP 5.5
+
+Create DB
+Create DB Users with Privilages
+
+// database connection config
+
+$dbHost = 'localhost';
+
+$dbUser = 'tafaca_countrym_user';
+
+$dbPass = 'aXJ7%UZJJqA[';
+
+$dbName = 'tafaca_countrym_admin';
+

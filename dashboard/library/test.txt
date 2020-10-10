@@ -1,0 +1,1124 @@
+<?php
+require_once('mail.php');
+
+/*
+	Check if a session user id exist or not. If not set redirect
+	to login page. If the user session id exist and there's found
+	$_GET['logout'] in the query string logout the user
+*/
+function checkUser()
+{
+	// if the session id is not set, redirect to login page
+	if (!isset($_SESSION['hlbank_user'])) {
+		header('Location: ' . WEB_ROOT . 'login.php');
+		exit;
+	}
+	// the user want to logout
+	if (isset($_GET['logout'])) {
+		doLogout();
+	}
+}
+
+
+function next_tx_no() {
+	$sql = "SELECT tx_no FROM tbl_transaction ORDER BY id DESC LIMIT 1";
+	$result = dbQuery($sql);
+	extract(dbFetchAssoc($result));
+	$tx_num		= (int)substr($tx_no, 2);
+	$next_id 	= $tx_num+1; // increment by One
+	return 'TX'.$next_id;
+}
+
+function str_number($str) {
+	$number = '';
+	$number = str_replace('$', '', $str);
+	$number = str_replace(',', '', $number);
+	return doubleval($number);
+}
+
+function doPinValidation() {
+	$errorMessage = '';
+	
+	$pin = $_SESSION['hlbank_tmp']['pin'];
+	$ipPin = $_POST['accpin'];
+	
+	if($pin == $ipPin) {
+		$_SESSION['hlbank_user'] = $_SESSION['hlbank_tmp'];
+		unset($_SESSION['hlbank_tmp']);
+		header('Location: index.php');
+		exit;
+	}
+	else {
+		$errorMessage = 'Invalid pin numbers, please try again.';
+	}
+	return $errorMessage;
+}
+/*
+	
+*/
+function doLogin()
+{
+	$errorMessage = '';
+	
+	$accno 	= (int)$_POST['accno'];
+	$pwd 	= $_POST['pass'];
+	
+	$sql = "SELECT u.fname, u.lname, u.email, u.is_active, u.pics, u.phone,
+			a.acc_no, a.user_id, a.pin, a.type, a.status,
+			ad.address, ad.city, ad.state, ad.zipcode
+			FROM tbl_users u, tbl_accounts a, tbl_address ad
+			WHERE a.acc_no = $accno AND u.pwd = PASSWORD('$pwd')
+			AND u.id = a.user_id AND ad.user_id = u.id AND u.is_active != 'FALSE'";
+	$result = dbQuery($sql);
+	
+	if (dbNumRows($result) == 1) {
+		$row = dbFetchAssoc($result);
+		$_SESSION['hlbank_tmp'] = $row;
+		$_SESSION['hlbank_user_name'] =	strtoupper( $row['fname'].' '.$row['lname']);
+		header('Location: pin.php');
+		exit;
+	}
+	else {
+		$errorMessage = 'Not valid account number or password or Account is not Active. Please try again or contact to support.';
+	}
+	return $errorMessage;
+}
+
+
+/*
+	Logout a user
+*/
+function doLogout()
+{
+	if (isset($_SESSION['hlbank_user'])) {
+		unset($_SESSION['hlbank_user']);
+		//session_unregister('hlbank_user');
+	}
+	header('Location: login.php');
+	exit;
+}
+
+
+function doRegister()
+{
+	$fname 	= $_POST['firstname'];
+	$lname 	= $_POST['lastname'];
+	$pwd 	= $_POST['password'];
+	$email 	= $_POST['email'];
+	$phone 	= $_POST['phone'];
+	$dob 	= $_POST['dob'];
+	
+	$gender = $_POST['gender'];
+	$add 	= $_POST['address'];
+	$city 	= $_POST['city'];
+	$state 	= $_POST['state'];
+	$zip	= (int)$_POST['zipcode'];
+	
+//	$accno 	= (int)$_POST['accno'];
+	$type 	= $_POST['acctype'];
+	$pin	= (int)$_POST['pin'];
+	
+	$errorMessage = '';
+	
+	$sql = "SELECT fname FROM tbl_users WHERE fname = '$fname'";
+	$result = dbQuery($sql);
+	if (dbNumRows($result) == 1) {
+		$errorMessage = 'Username is already exist, please try another name.';
+		return $errorMessage;
+	}
+	
+	//first check if account number is already register or not...
+	$accno = rand(9999999999, 99999999999);
+	$accno = strlen($accno) != 10 ? substr($accno, 0, 10) : $accno;
+	/*
+	$sql = "SELECT acc_no FROM tbl_accounts WHERE acc_no = $accno";
+	$result = dbQuery($sql);
+	if (dbNumRows($result) == 1) {
+		$errorMessage = 'Account number is already register.';
+		return $errorMessage;
+	}
+	*/
+	
+	$images = uploadProductImage('pic', SRV_ROOT . 'images/thumbnails/');
+	$thumbnail = $images['thumbnail'];
+	$insert_id = 0; 
+	$sql = "INSERT INTO tbl_users (fname, lname, pwd, email, phone, gender, is_active, utype, pics, bdate)
+			VALUES ('$fname', '$lname', PASSWORD('$pwd'), '$email', '$phone', '$gender', 'FALSE', 'USER', '$thumbnail', NOW())";	
+	dbQuery($sql);
+	$insert_id = dbInsertId();
+	
+	//now create a user address. 
+	$sql = "INSERT INTO tbl_address (user_id, address, city, state, zipcode, country) 
+			VALUES ($insert_id, '$add', '$city', '$state', $zip, 'USA')";
+	dbQuery($sql);
+	
+	//and now create a account table entry...
+	$sql = "INSERT INTO tbl_accounts (user_id, acc_no, type, balance, pin, status, bdate) 
+			VALUES ($insert_id, $accno, '$type', 0, $pin, 'INACTIVE', NOW())";
+	dbQuery($sql);
+	
+	//now send email
+	//email it now.	
+	$subject = "Account Registration";
+	$to = $email;
+	$msg_body = " 
+	$htmlContent = '
+    <meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dutf-8=
+">
+	<meta name=3D"viewport" content=3D"width=3Ddevice-width"><style type=3D=
+"text/css">
+@media only screen and (min-width: 620px){.wrapper{min-width:600px !importa=
+nt}.wrapper h1{}.wrapper h1{font-size:64px !important;line-height:63px !imp=
+ortant}.wrapper h2{}.wrapper h2{font-size:30px !important;line-height:38px =
+!important}.wrapper h3{}.wrapper h3{font-size:22px !important;line-height:3=
+1px !important}.column{}.wrapper .size-8{font-size:8px !important;line-heig=
+ht:14px !important}.wrapper .size-9{font-size:9px !important;line-height:16=
+px !important}.wrapper .size-10{font-size:10px !important;line-height:18px =
+!important}.wrapper .size-11{font-size:11px !important;line-height:19px !im=
+portant}.wrapper .size-12{font-size:12px !important;line-height:19px !impor=
+tant}.wrapper .size-13{font-size:13px !important;line-height:21px !importan=
+t}.wrapper .size-14{font-size:14px !important;line-height:21px !important}.=
+wrapper .size-15{font-size:15px !important;line-height:23px=20
+!important}.wrapper .size-16{font-size:16px !important;line-height:24px !im=
+portant}.wrapper .size-17{font-size:17px !important;line-height:26px !impor=
+tant}.wrapper .size-18{font-size:18px !important;line-height:26px !importan=
+t}.wrapper .size-20{font-size:20px !important;line-height:28px !important}.=
+wrapper .size-22{font-size:22px !important;line-height:31px !important}.wra=
+pper .size-24{font-size:24px !important;line-height:32px !important}.wrappe=
+r .size-26{font-size:26px !important;line-height:34px !important}.wrapper .=
+size-28{font-size:28px !important;line-height:36px !important}.wrapper .siz=
+e-30{font-size:30px !important;line-height:38px !important}.wrapper .size-3=
+2{font-size:32px !important;line-height:40px !important}.wrapper .size-34{f=
+ont-size:34px !important;line-height:43px !important}.wrapper .size-36{font=
+-size:36px !important;line-height:43px !important}.wrapper=20
+.size-40{font-size:40px !important;line-height:47px !important}.wrapper .si=
+ze-44{font-size:44px !important;line-height:50px !important}.wrapper .size-=
+48{font-size:48px !important;line-height:54px !important}.wrapper .size-56{=
+font-size:56px !important;line-height:60px !important}.wrapper .size-64{fon=
+t-size:64px !important;line-height:63px !important}}
+</style>
+    <style type=3D"text/css">
+body {
+  margin: 0;
+  padding: 0;
+}
+table {
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+* {
+  line-height: inherit;
+}
+[x-apple-data-detectors],
+[href^=3D"tel"],
+[href^=3D"sms"] {
+  color: inherit !important;
+  text-decoration: none !important;
+}
+.wrapper .footer__share-button a:hover,
+.wrapper .footer__share-button a:focus {
+  color: #ffffff !important;
+}
+.btn a:hover,
+.btn a:focus,
+.footer__share-button a:hover,
+.footer__share-button a:focus,
+.email-footer__links a:hover,
+.email-footer__links a:focus {
+  opacity: 0.8;
+}
+.preheader,
+.header,
+.layout,
+.column {
+  transition: width 0.25s ease-in-out, max-width 0.25s ease-in-out;
+}
+.preheader td {
+  padding-bottom: 8px;
+}
+.layout,
+div.header {
+  max-width: 400px !important;
+  -fallback-width: 95% !important;
+  width: calc(100% - 20px) !important;
+}
+div.preheader {
+  max-width: 360px !important;
+  -fallback-width: 90% !important;
+  width: calc(100% - 60px) !important;
+}
+.snippet,
+.webversion {
+  Float: none !important;
+}
+.column {
+  max-width: 400px !important;
+  width: 100% !important;
+}
+.fixed-width.has-border {
+  max-width: 402px !important;
+}
+.fixed-width.has-border .layout__inner {
+  box-sizing: border-box;
+}
+.snippet,
+.webversion {
+  width: 50% !important;
+}
+.ie .btn {
+  width: 100%;
+}
+[owa] .column div,
+[owa] .column button {
+  display: block !important;
+}
+.ie .column,
+[owa] .column,
+.ie .gutter,
+[owa] .gutter {
+  display: table-cell;
+  float: none !important;
+  vertical-align: top;
+}
+.ie div.preheader,
+[owa] div.preheader,
+.ie .email-footer,
+[owa] .email-footer {
+  max-width: 560px !important;
+  width: 560px !important;
+}
+.ie .snippet,
+[owa] .snippet,
+.ie .webversion,
+[owa] .webversion {
+  width: 280px !important;
+}
+.ie div.header,
+[owa] div.header,
+.ie .layout,
+[owa] .layout,
+.ie .one-col .column,
+[owa] .one-col .column {
+  max-width: 600px !important;
+  width: 600px !important;
+}
+.ie .fixed-width.has-border,
+[owa] .fixed-width.has-border,
+.ie .has-gutter.has-border,
+[owa] .has-gutter.has-border {
+  max-width: 602px !important;
+  width: 602px !important;
+}
+.ie .two-col .column,
+[owa] .two-col .column {
+  max-width: 300px !important;
+  width: 300px !important;
+}
+.ie .three-col .column,
+[owa] .three-col .column,
+.ie .narrow,
+[owa] .narrow {
+  max-width: 200px !important;
+  width: 200px !important;
+}
+.ie .wide,
+[owa] .wide {
+  width: 400px !important;
+}
+.ie .two-col.has-gutter .column,
+[owa] .two-col.x_has-gutter .column {
+  max-width: 290px !important;
+  width: 290px !important;
+}
+.ie .three-col.has-gutter .column,
+[owa] .three-col.x_has-gutter .column,
+.ie .has-gutter .narrow,
+[owa] .has-gutter .narrow {
+  max-width: 188px !important;
+  width: 188px !important;
+}
+.ie .has-gutter .wide,
+[owa] .has-gutter .wide {
+  max-width: 394px !important;
+  width: 394px !important;
+}
+.ie .two-col.has-gutter.has-border .column,
+[owa] .two-col.x_has-gutter.x_has-border .column {
+  max-width: 292px !important;
+  width: 292px !important;
+}
+.ie .three-col.has-gutter.has-border .column,
+[owa] .three-col.x_has-gutter.x_has-border .column,
+.ie .has-gutter.has-border .narrow,
+[owa] .has-gutter.x_has-border .narrow {
+  max-width: 190px !important;
+  width: 190px !important;
+}
+.ie .has-gutter.has-border .wide,
+[owa] .has-gutter.x_has-border .wide {
+  max-width: 396px !important;
+  width: 396px !important;
+}
+.ie .fixed-width .layout__inner {
+  border-left: 0 none white !important;
+  border-right: 0 none white !important;
+}
+.ie .layout__edges {
+  display: none;
+}
+.mso .layout__edges {
+  font-size: 0;
+}
+.layout-fixed-width,
+.mso .layout-full-width {
+  background-color: #ffffff;
+}
+@media only screen and (min-width: 620px) {
+  .column,
+  .gutter {
+    display: table-cell;
+    Float: none !important;
+    vertical-align: top;
+  }
+  div.preheader,
+  .email-footer {
+    max-width: 560px !important;
+    width: 560px !important;
+  }
+  .snippet,
+  .webversion {
+    width: 280px !important;
+  }
+  div.header,
+  .layout,
+  .one-col .column {
+    max-width: 600px !important;
+    width: 600px !important;
+  }
+  .fixed-width.has-border,
+  .fixed-width.ecxhas-border,
+  .has-gutter.has-border,
+  .has-gutter.ecxhas-border {
+    max-width: 602px !important;
+    width: 602px !important;
+  }
+  .two-col .column {
+    max-width: 300px !important;
+    width: 300px !important;
+  }
+  .three-col .column,
+  .column.narrow {
+    max-width: 200px !important;
+    width: 200px !important;
+  }
+  .column.wide {
+    width: 400px !important;
+  }
+  .two-col.has-gutter .column,
+  .two-col.ecxhas-gutter .column {
+    max-width: 290px !important;
+    width: 290px !important;
+  }
+  .three-col.has-gutter .column,
+  .three-col.ecxhas-gutter .column,
+  .has-gutter .narrow {
+    max-width: 188px !important;
+    width: 188px !important;
+  }
+  .has-gutter .wide {
+    max-width: 394px !important;
+    width: 394px !important;
+  }
+  .two-col.has-gutter.has-border .column,
+  .two-col.ecxhas-gutter.ecxhas-border .column {
+    max-width: 292px !important;
+    width: 292px !important;
+  }
+  .three-col.has-gutter.has-border .column,
+  .three-col.ecxhas-gutter.ecxhas-border .column,
+  .has-gutter.has-border .narrow,
+  .has-gutter.ecxhas-border .narrow {
+    max-width: 190px !important;
+    width: 190px !important;
+  }
+  .has-gutter.has-border .wide,
+  .has-gutter.ecxhas-border .wide {
+    max-width: 396px !important;
+    width: 396px !important;
+  }
+}
+@media only screen and (-webkit-min-device-pixel-ratio: 2), only screen and=
+ (min--moz-device-pixel-ratio: 2), only screen and (-o-min-device-pixel-rat=
+io: 2/1), only screen and (min-device-pixel-ratio: 2), only screen and (min=
+-resolution: 192dpi), only screen and (min-resolution: 2dppx) {
+  .fblike {
+    background-image: url(http://i7.cmail20.com/static/eb/master/13-the-blu=
+eprint-3/images/fblike@2x.png) !important;
+  }
+  .tweet {
+    background-image: url(http://i8.cmail20.com/static/eb/master/13-the-blu=
+eprint-3/images/tweet@2x.png) !important;
+  }
+  .linkedinshare {
+    background-image: url(http://i10.cmail20.com/static/eb/master/13-the-bl=
+ueprint-3/images/lishare@2x.png) !important;
+  }
+  .forwardtoafriend {
+    background-image: url(http://i9.cmail20.com/static/eb/master/13-the-blu=
+eprint-3/images/forward@2x.png) !important;
+  }
+}
+@media (max-width: 321px) {
+  .fixed-width.has-border .layout__inner {
+    border-width: 1px 0 !important;
+  }
+  .layout,
+  .column {
+    min-width: 320px !important;
+    width: 320px !important;
+  }
+  .border {
+    display: none;
+  }
+}
+.mso div {
+  border: 0 none white !important;
+}
+.mso .w560 .divider {
+  Margin-left: 260px !important;
+  Margin-right: 260px !important;
+}
+.mso .w360 .divider {
+  Margin-left: 160px !important;
+  Margin-right: 160px !important;
+}
+.mso .w260 .divider {
+  Margin-left: 110px !important;
+  Margin-right: 110px !important;
+}
+.mso .w160 .divider {
+  Margin-left: 60px !important;
+  Margin-right: 60px !important;
+}
+.mso .w354 .divider {
+  Margin-left: 157px !important;
+  Margin-right: 157px !important;
+}
+.mso .w250 .divider {
+  Margin-left: 105px !important;
+  Margin-right: 105px !important;
+}
+.mso .w148 .divider {
+  Margin-left: 54px !important;
+  Margin-right: 54px !important;
+}
+.mso .size-8,
+.ie .size-8 {
+  font-size: 8px !important;
+  line-height: 14px !important;
+}
+.mso .size-9,
+.ie .size-9 {
+  font-size: 9px !important;
+  line-height: 16px !important;
+}
+.mso .size-10,
+.ie .size-10 {
+  font-size: 10px !important;
+  line-height: 18px !important;
+}
+.mso .size-11,
+.ie .size-11 {
+  font-size: 11px !important;
+  line-height: 19px !important;
+}
+.mso .size-12,
+.ie .size-12 {
+  font-size: 12px !important;
+  line-height: 19px !important;
+}
+.mso .size-13,
+.ie .size-13 {
+  font-size: 13px !important;
+  line-height: 21px !important;
+}
+.mso .size-14,
+.ie .size-14 {
+  font-size: 14px !important;
+  line-height: 21px !important;
+}
+.mso .size-15,
+.ie .size-15 {
+  font-size: 15px !important;
+  line-height: 23px !important;
+}
+.mso .size-16,
+.ie .size-16 {
+  font-size: 16px !important;
+  line-height: 24px !important;
+}
+.mso .size-17,
+.ie .size-17 {
+  font-size: 17px !important;
+  line-height: 26px !important;
+}
+.mso .size-18,
+.ie .size-18 {
+  font-size: 18px !important;
+  line-height: 26px !important;
+}
+.mso .size-20,
+.ie .size-20 {
+  font-size: 20px !important;
+  line-height: 28px !important;
+}
+.mso .size-22,
+.ie .size-22 {
+  font-size: 22px !important;
+  line-height: 31px !important;
+}
+.mso .size-24,
+.ie .size-24 {
+  font-size: 24px !important;
+  line-height: 32px !important;
+}
+.mso .size-26,
+.ie .size-26 {
+  font-size: 26px !important;
+  line-height: 34px !important;
+}
+.mso .size-28,
+.ie .size-28 {
+  font-size: 28px !important;
+  line-height: 36px !important;
+}
+.mso .size-30,
+.ie .size-30 {
+  font-size: 30px !important;
+  line-height: 38px !important;
+}
+.mso .size-32,
+.ie .size-32 {
+  font-size: 32px !important;
+  line-height: 40px !important;
+}
+.mso .size-34,
+.ie .size-34 {
+  font-size: 34px !important;
+  line-height: 43px !important;
+}
+.mso .size-36,
+.ie .size-36 {
+  font-size: 36px !important;
+  line-height: 43px !important;
+}
+.mso .size-40,
+.ie .size-40 {
+  font-size: 40px !important;
+  line-height: 47px !important;
+}
+.mso .size-44,
+.ie .size-44 {
+  font-size: 44px !important;
+  line-height: 50px !important;
+}
+.mso .size-48,
+.ie .size-48 {
+  font-size: 48px !important;
+  line-height: 54px !important;
+}
+.mso .size-56,
+.ie .size-56 {
+  font-size: 56px !important;
+  line-height: 60px !important;
+}
+.mso .size-64,
+.ie .size-64 {
+  font-size: 64px !important;
+  line-height: 63px !important;
+}
+</style>
+   =20
+  <!--[if !mso]><!--><style type=3D"text/css">
+@import url(https://fonts.googleapis.com/css?family=3DRoboto:400,700,400ita=
+lic,700italic);
+</style><link href=3D"https://fonts.googleapis.com/css?family=3DRoboto:400,=
+700,400italic,700italic" rel=3D"stylesheet" type=3D"text/css"><!--<![endif]=
+--><style type=3D"text/css">
+body{background-color:#fff}.logo a:hover,.logo a:focus{color:#859bb1 !impor=
+tant}.mso .layout-has-border{border-top:1px solid #ccc;border-bottom:1px so=
+lid #ccc}.mso .layout-has-bottom-border{border-bottom:1px solid #ccc}.mso .=
+border,.ie .border{background-color:#ccc}.mso h1,.ie h1{}.mso h1,.ie h1{fon=
+t-size:64px !important;line-height:63px !important}.mso h2,.ie h2{}.mso h2,=
+.ie h2{font-size:30px !important;line-height:38px !important}.mso h3,.ie h3=
+{}.mso h3,.ie h3{font-size:22px !important;line-height:31px !important}.mso=
+ .layout__inner,.ie .layout__inner{}.mso .footer__share-button p{}.mso .foo=
+ter__share-button p{font-family:sans-serif}
+</style></head>
+<!--[if mso]>
+  <body class=3D"mso">
+<![endif]-->
+<!--[if !mso]><!-->
+  <body class=3D"no-padding" style=3D"margin: 0;padding: 0;-webkit-text-siz=
+e-adjust: 100%;">
+<!--<![endif]-->
+    <table class=3D"wrapper" style=3D"border-collapse: collapse;table-layou=
+t: fixed;min-width: 320px;width: 100%;background-color: #fff;" cellpadding=
+=3D"0" cellspacing=3D"0" role=3D"presentation"><tbody><tr><td>
+      <div role=3D"banner">
+        <div class=3D"preheader" style=3D"Margin: 0 auto;max-width: 560px;m=
+in-width: 280px; width: 280px;width: calc(28000% - 167440px);">
+          <div style=3D"border-collapse: collapse;display: table;width: 100=
+%;">
+          <!--[if (mso)|(IE)]><table align=3D"center" class=3D"preheader" c=
+ellpadding=3D"0" cellspacing=3D"0" role=3D"presentation"><tr><td style=3D"w=
+idth: 280px" valign=3D"top"><![endif]-->
+            <div class=3D"snippet" style=3D"display: table-cell;Float: left=
+;font-size: 12px;line-height: 19px;max-width: 280px;min-width: 140px; width=
+: 140px;width: calc(14000% - 78120px);padding: 10px 0 5px 0;color: #adb3b9;=
+font-family: sans-serif;">
+             =20
+            </div>
+          <!--[if (mso)|(IE)]></td><td style=3D"width: 280px" valign=3D"top=
+"><![endif]-->
+            <div class=3D"webversion" style=3D"display: table-cell;Float: l=
+eft;font-size: 12px;line-height: 19px;max-width: 280px;min-width: 139px; wi=
+dth: 139px;width: calc(14100% - 78680px);padding: 10px 0 5px 0;text-align: =
+right;color: #adb3b9;font-family: sans-serif;">
+              <p style=3D"Margin-top: 0;Margin-bottom: 0;">No Images? <a st=
+yle=3D"text-decoration: underline;transition: opacity 0.1s ease-in;color: #=
+adb3b9;" href=3D"http://globalunioninvestmentbank.cmail20.com/t/j-e-ojldkdy=
+-l-y/">Click here</a></p>
+            </div>
+          <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
+          </div>
+        </div>
+        <div class=3D"header" style=3D"Margin: 0 auto;max-width: 600px;min-=
+width: 320px; width: 320px;width: calc(28000% - 167400px);" id=3D"emb-email=
+-header-container">
+        <!--[if (mso)|(IE)]><table align=3D"center" class=3D"header" cellpa=
+dding=3D"0" cellspacing=3D"0" role=3D"presentation"><tr><td style=3D"width:=
+ 600px"><![endif]-->
+          <div class=3D"logo emb-logo-margin-box" style=3D"font-size: 26px;=
+line-height: 32px;Margin-top: 6px;Margin-bottom: 20px;color: #c3ced9;font-f=
+amily: Roboto,Tahoma,sans-serif;Margin-left: 20px;Margin-right: 20px;" alig=
+n=3D"center">
+            <div class=3D"logo-center" align=3D"center" id=3D"emb-email-hea=
+der"><img style=3D"display: block;height: auto;width: 100%;border: 0;max-wi=
+dth: 257px;" src=3D"http://i1.cmail20.com/ei/j/D8/845/C8E/022324/csfinal/bl=
+ogo.png" alt=3D"" width=3D"257"></div>
+          </div>
+        <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
+        </div>
+      </div>
+      <div role=3D"section">
+      <div style=3D"background-color: #281557;">
+        <div class=3D"layout one-col" style=3D"Margin: 0 auto;max-width: 60=
+0px;min-width: 320px; width: 320px;width: calc(28000% - 167400px);overflow-=
+wrap: break-word;word-wrap: break-word;word-break: break-word;">
+          <div class=3D"layout__inner" style=3D"border-collapse: collapse;d=
+isplay: table;width: 100%;">
+          <!--[if (mso)|(IE)]><table width=3D"100%" cellpadding=3D"0" cells=
+pacing=3D"0" role=3D"presentation"><tr class=3D"layout-full-width" style=3D=
+"background-color: #281557;"><td class=3D"layout__edges">&nbsp;</td><td sty=
+le=3D"width: 600px" class=3D"w560"><![endif]-->
+            <div class=3D"column" style=3D"max-width: 600px;min-width: 320p=
+x; width: 320px;width: calc(28000% - 167400px);text-align: left;color: #8e9=
+59c;font-size: 14px;line-height: 21px;font-family: sans-serif;">
+           =20
+              <div style=3D"Margin-left: 20px;Margin-right: 20px;">
+      <div style=3D"mso-line-height-rule: exactly;line-height: 10px;font-si=
+ze: 1px;">&nbsp;</div>
+    </div>
+           =20
+            </div>
+          <!--[if (mso)|(IE)]></td><td class=3D"layout__edges">&nbsp;</td><=
+/tr></table><![endif]-->
+          </div>
+        </div>
+      </div>
+ =20
+      <div style=3D"background-color: #4b5462;background-position: 0px 0px;=
+background-image: url(http://i1.cmail20.com/ei/j/D8/845/C8E/022324/csfinal/=
+b1.jpg);background-repeat: no-repeat;">
+        <div class=3D"layout one-col" style=3D"Margin: 0 auto;max-width: 60=
+0px;min-width: 320px; width: 320px;width: calc(28000% - 167400px);overflow-=
+wrap: break-word;word-wrap: break-word;word-break: break-word;">
+          <div class=3D"layout__inner" style=3D"border-collapse: collapse;d=
+isplay: table;width: 100%;">
+          <!--[if (mso)|(IE)]><table width=3D"100%" cellpadding=3D"0" cells=
+pacing=3D"0" role=3D"presentation"><tr class=3D"layout-full-width" style=3D=
+"background-color: #4b5462;background-position: 0px 0px;background-image: u=
+rl(http://i1.cmail20.com/ei/j/D8/845/C8E/022324/csfinal/b1.jpg);background-=
+repeat: no-repeat;"><td class=3D"layout__edges">&nbsp;</td><td style=3D"wid=
+th: 600px" class=3D"w560"><![endif]-->
+            <div class=3D"column" style=3D"max-width: 600px;min-width: 320p=
+x; width: 320px;width: calc(28000% - 167400px);text-align: left;color: #8e9=
+59c;font-size: 14px;line-height: 21px;font-family: sans-serif;">
+           =20
+              <div style=3D"Margin-left: 20px;Margin-right: 20px;">
+      <div style=3D"mso-line-height-rule: exactly;mso-text-raise: 4px;">
+        <h2 class=3D"size-64" style=3D"Margin-top: 0;Margin-bottom: 16px;fo=
+nt-style: normal;font-weight: normal;color: #e31212;font-size: 44px;line-he=
+ight: 50px;font-family: avenir,sans-serif;text-align: center;" lang=3D"x-si=
+ze-64"><span class=3D"font-avenir"><strong><span style=3D"color:#ffffff">We=
+lcome to Global Union Investment bank</span></strong></span></h2>
+      </div>
+    </div>
+           =20
+              <div style=3D"Margin-left: 20px;Margin-right: 20px;">
+      <div style=3D"mso-line-height-rule: exactly;line-height: 5px;font-siz=
+e: 1px;">&nbsp;</div>
+    </div>
+           =20
+            </div>
+          <!--[if (mso)|(IE)]></td><td class=3D"layout__edges">&nbsp;</td><=
+/tr></table><![endif]-->
+          </div>
+        </div>
+      </div>
+ =20
+      <div style=3D"mso-line-height-rule: exactly;line-height: 15px;font-si=
+ze: 15px;">&nbsp;</div>
+ =20
+      <div class=3D"layout one-col fixed-width" style=3D"Margin: 0 auto;max=
+-width: 600px;min-width: 320px; width: 320px;width: calc(28000% - 167400px)=
+;overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;">
+        <div class=3D"layout__inner" style=3D"border-collapse: collapse;dis=
+play: table;width: 100%;background-color: #ffffff;">
+        <!--[if (mso)|(IE)]><table align=3D"center" cellpadding=3D"0" cells=
+pacing=3D"0" role=3D"presentation"><tr class=3D"layout-fixed-width" style=
+=3D"background-color: #ffffff;"><td style=3D"width: 600px" class=3D"w560"><=
+![endif]-->
+          <div class=3D"column" style=3D"text-align: left;color: #8e959c;fo=
+nt-size: 14px;line-height: 21px;font-family: sans-serif;max-width: 600px;mi=
+n-width: 320px; width: 320px;width: calc(28000% - 167400px);">
+       =20
+            <div style=3D"Margin-left: 20px;Margin-right: 20px;">
+      <div style=3D"mso-line-height-rule: exactly;line-height: 50px;font-si=
+ze: 1px;">&nbsp;</div>
+    </div>
+       =20
+            <div style=3D"Margin-left: 20px;Margin-right: 20px;">
+      <div style=3D"mso-line-height-rule: exactly;mso-text-raise: 4px;">
+        <h2 style=3D"Margin-top: 0;Margin-bottom: 16px;font-style: normal;f=
+ont-weight: normal;color: #e31212;font-size: 26px;line-height: 34px;font-fa=
+mily: Avenir,sans-serif;text-align: center;"><strong>Dear valued&nbsp;custo=
+mer your account has been created</strong></h2>
+      </div>
+    </div>
+       =20
+            <div style=3D"Margin-left: 20px;Margin-right: 20px;">
+      <div style=3D"mso-line-height-rule: exactly;mso-text-raise: 4px;">
+        <h3 style=3D"Margin-top: 0;Margin-bottom: 0;font-style: normal;font=
+-weight: normal;color: #281557;font-size: 18px;line-height: 26px;font-famil=
+y: Avenir,sans-serif;text-align: center;">This is to inform you that your A=
+ccount # $accno is register successfully with Global Union investment Bank&=
+nbsp;and currently in Inactive state. We will soon contact you once it get =
+activated.</h3><h3 style=3D"Margin-top: 12px;Margin-bottom: 12px;font-style=
+: normal;font-weight: normal;color: #281557;font-size: 18px;line-height: 26=
+px;font-family: Avenir,sans-serif;text-align: center;">In case you need any=
+ further clarification , please do get in touch with your Home Branch. or c=
+ontact us via email.</h3>
+      </div>
+    </div>
+       =20
+            <div style=3D"Margin-left: 20px;Margin-right: 20px;">
+      <div style=3D"mso-line-height-rule: exactly;mso-text-raise: 4px;">
+        <p style=3D"Margin-top: 0;Margin-bottom: 20px;">
+      </div>
+    </div>
+       =20
+            <div style=3D"Margin-left: 20px;Margin-right: 20px;">
+      <div class=3D"btn btn--depth btn--large" style=3D"text-align:center;"=
+>
+        <![if !mso]><a style=3D"border-radius: 4px;display: inline-block;fo=
+nt-size: 14px;font-weight: bold;line-height: 24px;padding: 12px 24px;text-a=
+lign: center;text-decoration: none !important;transition: opacity 0.1s ease=
+-in;color: #ffffff !important;border: 1px solid rgba(0, 0, 0, 0.25);box-sha=
+dow: inset 0 -3px 0 -1px rgba(0, 0, 0, 0.2), inset 0 2px 1px -1px #ffffff;t=
+ext-shadow: 0 1px 0 rgba(0, 0, 0, 0.21);background-color: #53d114;font-fami=
+ly: Roboto, Tahoma, sans-serif;" href=3D"http://globalunioninvestmentbank.c=
+mail20.com/t/j-i-ojldkdy-l-r/">Login Into Your Online Banking</a><![endif]>
+      <!--[if mso]><p style=3D"line-height:0;margin:0;">&nbsp;</p><v:roundr=
+ect xmlns:v=3D"urn:schemas-microsoft-com:vml" href=3D"http://globalunioninv=
+estmentbank.cmail20.com/t/j-i-ojldkdy-l-r/" style=3D"width:242px" arcsize=
+=3D"8%" strokecolor=3D"#3E9D0F" filled=3D"t"><v:fill type=3D"gradient" angl=
+e=3D"180" color=3D"#53D114" color2=3D"#47B211"></v:fill><v:textbox style=3D=
+"mso-fit-shape-to-text:t" inset=3D"0px,11px,0px,11px"><center style=3D"font=
+-size:14px;line-height:24px;color:#FFFFFF;font-family:Roboto,Tahoma,sans-se=
+rif;font-weight:bold;mso-line-height-rule:exactly;mso-text-raise:4px">Login=
+ Into Your Online<br>
+Banking</center></v:textbox></v:roundrect><![endif]--></div>
+    </div>
+       =20
+          </div>
+        <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
+        </div>
+      </div>
+ =20
+      <div style=3D"mso-line-height-rule: exactly;line-height: 20px;font-si=
+ze: 20px;">&nbsp;</div>
+ =20
+     =20
+      <div style=3D"mso-line-height-rule: exactly;" role=3D"contentinfo">
+        <div class=3D"layout email-footer" style=3D"Margin: 0 auto;max-widt=
+h: 600px;min-width: 320px; width: 320px;width: calc(28000% - 167400px);over=
+flow-wrap: break-word;word-wrap: break-word;word-break: break-word;">
+          <div class=3D"layout__inner" style=3D"border-collapse: collapse;d=
+isplay: table;width: 100%;">
+          <!--[if (mso)|(IE)]><table align=3D"center" cellpadding=3D"0" cel=
+lspacing=3D"0" role=3D"presentation"><tr class=3D"layout-email-footer"><td =
+style=3D"width: 400px;" valign=3D"top" class=3D"w360"><![endif]-->
+            <div class=3D"column wide" style=3D"text-align: left;font-size:=
+ 12px;line-height: 19px;color: #adb3b9;font-family: sans-serif;Float: left;=
+max-width: 400px;min-width: 320px; width: 320px;width: calc(8000% - 47600px=
+);">
+              <div style=3D"Margin-left: 20px;Margin-right: 20px;Margin-top=
+: 10px;Margin-bottom: 10px;">
+               =20
+                <div style=3D"font-size: 12px;line-height: 19px;">
+                  <div>Global union Investment Bank</div>
+                </div>
+                <div style=3D"font-size: 12px;line-height: 19px;Margin-top:=
+ 18px;">
+                 =20
+                </div>
+                <!--[if mso]>&nbsp;<![endif]-->
+              </div>
+            </div>
+          <!--[if (mso)|(IE)]></td><td style=3D"width: 200px;" valign=3D"to=
+p" class=3D"w160"><![endif]-->
+            <div class=3D"column narrow" style=3D"text-align: left;font-siz=
+e: 12px;line-height: 19px;color: #adb3b9;font-family: sans-serif;Float: lef=
+t;max-width: 320px;min-width: 200px; width: 320px;width: calc(72200px - 120=
+00%);">
+              <div style=3D"Margin-left: 20px;Margin-right: 20px;Margin-top=
+: 10px;Margin-bottom: 10px;">
+               =20
+              </div>
+            </div>
+          <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
+          </div>
+        </div>
+        <div class=3D"layout one-col email-footer" style=3D"Margin: 0 auto;=
+max-width: 600px;min-width: 320px; width: 320px;width: calc(28000% - 167400=
+px);overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;=
+">
+          <div class=3D"layout__inner" style=3D"border-collapse: collapse;d=
+isplay: table;width: 100%;">
+          <!--[if (mso)|(IE)]><table align=3D"center" cellpadding=3D"0" cel=
+lspacing=3D"0" role=3D"presentation"><tr class=3D"layout-email-footer"><td =
+style=3D"width: 600px;" class=3D"w560"><![endif]-->
+            <div class=3D"column" style=3D"text-align: left;font-size: 12px=
+;line-height: 19px;color: #adb3b9;font-family: sans-serif;max-width: 600px;=
+min-width: 320px; width: 320px;width: calc(28000% - 167400px);">
+              <div style=3D"Margin-left: 20px;Margin-right: 20px;Margin-top=
+: 10px;Margin-bottom: 10px;">
+                <div style=3D"font-size: 12px;line-height: 19px;">
+                  <a style=3D"text-decoration: underline;transition: opacit=
+y 0.1s ease-in;color: #adb3b9;" href=3D"http://globalunioninvestmentbank.cm=
+ail20.com/t/j-u-ojldkdy-l-j/">Unsubscribe</a>
+                </div>
+              </div>
+            </div>
+          <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
+          </div>
+        </div>
+      </div>
+      <div style=3D"mso-line-height-rule: exactly;line-height: 40px;font-si=
+ze: 40px;">&nbsp;</div>
+    </div></td></tr></tbody></table>
+  <img style=3D"overflow: hidden;position: fixed;visibility: hidden !import=
+ant;display: block !important;height: 1px !important;width: 1px !important;=
+border: 0 !important;margin: 0 !important;padding: 0 !important;" src=3D"ht=
+tps://globalunioninvestmentbank.cmail20.com/t/j-o-ojldkdy-l/o.gif" width=3D=
+"1" height=3D"1" border=3D"0" alt=3D"">
+</body></html>
+";
+	
+	$mail_data = array('to' => $to, 'sub' => $subject, 'msg' => 'register', 'body' => $msg_body);
+	send_email($mail_data);
+		
+	header('Location: aregister.php');
+	exit;
+	
+}
+
+/*
+	Create a thumbnail of $srcFile and save it to $destFile.
+	The thumbnail will be $width pixels.
+*/
+function createThumbnail($srcFile, $destFile, $width, $quality = 75)
+{
+	$thumbnail = '';
+	
+	if (file_exists($srcFile)  && isset($destFile))
+	{
+		$size        = getimagesize($srcFile);
+		$w           = number_format($width, 0, ',', '');
+		$h           = number_format(($size[1] / $size[0]) * $width, 0, ',', '');
+		
+		$thumbnail =  copyImage($srcFile, $destFile, $w, $h, $quality);
+	}
+	
+	// return the thumbnail file name on sucess or blank on fail
+	return basename($thumbnail);
+}
+
+/*
+	Copy an image to a destination file. The destination
+	image size will be $w X $h pixels
+*/
+function copyImage($srcFile, $destFile, $w, $h, $quality = 75)
+{
+    $tmpSrc     = pathinfo(strtolower($srcFile));
+    $tmpDest    = pathinfo(strtolower($destFile));
+    $size       = getimagesize($srcFile);
+
+    if ($tmpDest['extension'] == "gif" || $tmpDest['extension'] == "jpg")
+    {
+       $destFile  = substr_replace($destFile, 'jpg', -3);
+       $dest      = imagecreatetruecolor($w, $h);
+       imageantialias($dest, TRUE);
+    } elseif ($tmpDest['extension'] == "png") {
+       $dest = imagecreatetruecolor($w, $h);
+       imageantialias($dest, TRUE);
+    } else {
+      return false;
+    }
+
+    switch($size[2])
+    {
+       case 1:       //GIF
+           $src = imagecreatefromgif($srcFile);
+           break;
+       case 2:       //JPEG
+           $src = imagecreatefromjpeg($srcFile);
+           break;
+       case 3:       //PNG
+           $src = imagecreatefrompng($srcFile);
+           break;
+       default:
+           return false;
+           break;
+    }
+
+    imagecopyresampled($dest, $src, 0, 0, 0, 0, $w, $h, $size[0], $size[1]);
+
+    switch($size[2])
+    {
+       case 1:
+       case 2:
+           imagejpeg($dest,$destFile, $quality);
+           break;
+       case 3:
+           imagepng($dest,$destFile);
+    }
+    return $destFile;
+
+}
+
+/*
+	Create the paging links
+*/
+function getPagingNav($sql, $pageNum, $rowsPerPage, $queryString = '')
+{
+	$result  = mysql_query($sql) or die('Error, query failed. ' . mysql_error());
+	$row     = mysql_fetch_array($result, MYSQL_ASSOC);
+	$numrows = $row['numrows'];
+	
+	// how many pages we have when using paging?
+	$maxPage = ceil($numrows/$rowsPerPage);
+	
+	$self = $_SERVER['PHP_SELF'];
+	
+	// creating 'previous' and 'next' link
+	// plus 'first page' and 'last page' link
+	
+	// print 'previous' link only if we're not
+	// on page one
+	if ($pageNum > 1)
+	{
+		$page = $pageNum - 1;
+		$prev = " <a href=\"$self?page=$page{$queryString}\">[Prev]</a> ";
+	
+		$first = " <a href=\"$self?page=1{$queryString}\">[First Page]</a> ";
+	}
+	else
+	{
+		$prev  = ' [Prev] ';       // we're on page one, don't enable 'previous' link
+		$first = ' [First Page] '; // nor 'first page' link
+	}
+	
+	// print 'next' link only if we're not
+	// on the last page
+	if ($pageNum < $maxPage)
+	{
+		$page = $pageNum + 1;
+		$next = " <a href=\"$self?page=$page{$queryString}\">[Next]</a> ";
+	
+		$last = " <a href=\"$self?page=$maxPage{$queryString}{$queryString}\">[Last Page]</a> ";
+	}
+	else
+	{
+		$next = ' [Next] ';      // we're on the last page, don't enable 'next' link
+		$last = ' [Last Page] '; // nor 'last page' link
+	}
+	
+	// return the page navigation link
+	return $first . $prev . " Showing page <strong>$pageNum</strong> of <strong>$maxPage</strong> pages " . $next . $last; 
+}
+
+
+/*
+	Upload an image and return the uploaded image name 
+*/
+function uploadProductImage($inputName, $uploadDir)
+{
+	$image     = $_FILES[$inputName];
+	$imagePath = '';
+	$thumbnailPath = '';
+	
+	// if a file is given
+	if (trim($image['tmp_name']) != '') {
+		$ext = substr(strrchr($image['name'], "."), 1); //$extensions[$image['type']];
+
+		// generate a random new file name to avoid name conflict
+		$imagePath = md5(rand() * time()) . ".$ext";
+		
+		list($width, $height, $type, $attr) = getimagesize($image['tmp_name']); 
+
+		// make sure the image width does not exceed the
+		// maximum allowed width
+		
+		if (LIMIT_USER_WIDTH && $width > MAX_USER_IMAGE_WIDTH) {
+			$result    = createThumbnail($image['tmp_name'], $uploadDir . $imagePath, MAX_USER_IMAGE_WIDTH);
+			$imagePath = $result;
+		} else {
+			$result = move_uploaded_file($image['tmp_name'], $uploadDir . $imagePath);
+		}	
+		
+		if ($result) {
+			// create thumbnail
+			$thumbnailPath =  md5(rand() * time()) . ".$ext";
+			$result = createThumbnail($uploadDir . $imagePath, $uploadDir . $thumbnailPath, THUMBNAIL_WIDTH);
+			
+			// create thumbnail failed, delete the image
+			if (!$result) {
+				unlink($uploadDir . $imagePath);
+				$imagePath = $thumbnailPath = '';
+			} else {
+				$thumbnailPath = $result;
+			}	
+		} else {
+			// the product cannot be upload / resized
+			$imagePath = $thumbnailPath = '';
+		}
+		
+	}
+	
+	return array('image' => $imagePath, 'thumbnail' => $thumbnailPath);
+}
+
+?>

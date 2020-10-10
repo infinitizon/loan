@@ -1,0 +1,8 @@
+
+The Script Requires PHP 5.5
+
+Libary/config.php to replace the database information 
+so thesame inside teh dashboard folder
+
+
+the admin login details will be find here: dashoard/admin/libary/function.php

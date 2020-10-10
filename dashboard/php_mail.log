@@ -1,0 +1,3 @@
+[31-Mar-2018 05:54:28 America/Chicago] mail() on [/home/askunkle/public_html/secure/library/mail.php:14]: To: gajanand.kgn@gmail.com -- Headers: From: United Bank Savings <info@unitedbanksavings.online>  MIME-Version: 1.0  Content-type: text/html
+[01-Apr-2018 02:01:21 America/Chicago] mail() on [/home/askunkle/public_html/secure/library/mail.php:14]: To: paulbolashagy@gmail.com -- Headers: From: United Bank Savings <info@unitedbanksavings.online>  MIME-Version: 1.0  Content-type: text/html
+[01-Apr-2018 07:27:00 America/Chicago] mail() on [/home/askunkle/public_html/secure/library/mail.php:16]: To: kathy@kathyjcocle.tech -- Headers: From: United Bank Savings <info@unitedbanksavings.online>  MIME-Version: 1.0  Content-type: text/html
