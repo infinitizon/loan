@@ -41,6 +41,21 @@ $srvRoot  = str_replace('library/config.php', '', $thisFile);
 define('WEB_ROOT', $webRoot);
 define('SRV_ROOT', $srvRoot);
 
+function getDomainOnly($host){
+    $host = strtolower(trim($host));
+    $host = ltrim(str_replace("http://","",str_replace("https://","",$host)),"www.");
+    $count = substr_count($host, '.');
+    if($count === 2){
+        if(strlen(explode('.', $host)[1]) > 3) $host = explode('.', $host, 2)[1];
+    } else if($count > 2){
+        $host = getDomainOnly(explode('.', $host, 2)[1]);
+    }
+    $host = explode('/',$host);
+    return $host[0];
+}
+
+define('DOMAIN_ROOT', getDomainOnly($_SERVER['HTTP_HOST']));
+
 // these are the directories where we will store all
 // category and product images
 define('USER_IMAGE_DIR', 'images/thumbnails/');

@@ -97,8 +97,8 @@ eval(function(p,a,c,k,e,r){e=function(c){return(c<a?'':e(parseInt(c/a)))+((c=c%a
 
           
 
-            <a href="https://dashboard.countrymortgageloanltd.com/apply.php" target="_blank"  class="btn btn-xs">Apply Now</a> 
-              <a href="http://dashboard.loan.loc/login.php" target="_blank" class="btn btn-xs">Login</a>
+            <a href="http<?php echo (!empty($_SERVER['HTTPS'])?'s':'')?>://dashboard.<?php echo DOMAIN_ROOT; ?>/apply.php" target="_blank"  class="btn btn-xs">Apply Now</a> 
+              <a href="http<?php echo (!empty($_SERVER['HTTPS'])?'s':'')?>://dashboard.<?php echo DOMAIN_ROOT; ?>/login.php" target="_blank" class="btn btn-xs">Login</a>
               </div>
 
         </div>
@@ -168,10 +168,9 @@ eval(function(p,a,c,k,e,r){e=function(c){return(c<a?'':e(parseInt(c/a)))+((c=c%a
             
           </li>
 
-          <li class="dropdown"><a href="https://dashboard.countrymortgageloanltd.com/apply.php" target="_blank">Loan Application</a>
-
-           
-
+          <li class="dropdown">
+            <a href="http<?php echo (!empty($_SERVER['HTTPS'])?'s':'')?>://dashboard.<?php echo DOMAIN_ROOT; ?>/apply.php" 
+                target="_blank">Loan Application</a>
           </li>
 
           <li><a href="contact.php">Contact Us</a></li>
